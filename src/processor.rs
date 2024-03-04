@@ -1,14 +1,30 @@
-extern crate repl;
 extern crate table;
+use table::{Row, Table, TableError};
 
-use repl::{
-    InsertArgs,
-    ReplError::{self, *},
-    ReplMessage::{self, *},
-    StatementType::{self, *},
-};
+pub type InsertArgs<'a> = Box<dyn Iterator<Item = &'a str> + 'a>;
+pub enum StatementType<'a> {
+    Insert { args: InsertArgs<'a> },
+    Select { args: InsertArgs<'a> },
+}
+use StatementType::*;
 
-use table::{Row, Table};
+#[derive(Debug)]
+pub enum ProcessorMessage {
+    Fetched(String),
+    Executed,
+}
+use crate::ProcessorMessage::*;
+
+#[derive(Debug)]
+pub enum ProcessorError {
+    BadRowNumber,
+    RowNumberNotFound,
+    BadKey,
+    BadUsername,
+    BadEmail,
+    TableErr(TableError),
+}
+use crate::ProcessorError::*;
 
 pub fn prepare_statement(input_buffer: &String) -> Result<StatementType, ()> {
     let mut statement = input_buffer.as_str().split_whitespace();
@@ -25,7 +41,7 @@ pub fn prepare_statement(input_buffer: &String) -> Result<StatementType, ()> {
 }
 
 pub fn execute_statement(statement: StatementType, table: &mut Table) {
-    let res: Result<_, ReplError> = match statement {
+    let res: Result<ProcessorMessage, ProcessorError> = match statement {
         Insert { args } => execute_insert(args, table),
         Select { args } => execute_select(args, table),
     };
@@ -41,12 +57,12 @@ pub fn execute_statement(statement: StatementType, table: &mut Table) {
 fn execute_select(
     mut statement_args: InsertArgs,
     table: &mut Table,
-) -> Result<ReplMessage, ReplError> {
+) -> Result<ProcessorMessage, ProcessorError> {
     match statement_args.next() {
         Some(s) => match s.parse::<usize>() {
             Ok(n) => match table.get_row(n - 1) {
                 Ok(row) => Ok(Fetched(format!("{row:?}"))),
-                Err(e) => Err(e),
+                Err(e) => Err(TableErr(e)),
             },
             _ => Err(BadRowNumber),
         },
@@ -57,7 +73,7 @@ fn execute_select(
 fn execute_insert(
     mut statement_args: InsertArgs,
     table: &mut Table,
-) -> Result<ReplMessage, ReplError> {
+) -> Result<ProcessorMessage, ProcessorError> {
     // probably do zip with defn to generalize
     let id: usize = match statement_args.next() {
         Some(s) => match s.parse() {

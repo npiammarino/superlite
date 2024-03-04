@@ -1,6 +1,8 @@
-extern crate repl;
-
-use repl::ReplError::{self, *};
+#[derive(Debug)]
+pub enum TableError {
+    TableIndexError,
+}
+use crate::TableError::*;
 
 const PAGE_SIZE: usize = 10;
 
@@ -55,7 +57,7 @@ impl Table {
         self.num_rows += 1;
     }
 
-    pub fn get_row(&self, row_number: usize) -> Result<Row, ReplError> {
+    pub fn get_row(&self, row_number: usize) -> Result<Row, TableError> {
         if row_number + 1 > self.num_rows {
             return Err(TableIndexError);
         }
