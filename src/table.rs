@@ -129,8 +129,8 @@ impl Table {
     }
 
     fn row_slot(&mut self, row_num: usize) -> (usize, usize) {
-        let page_index = row_num / ROWS_PER_PAGE;
-        let row_index = row_num % ROWS_PER_PAGE;
+        let page_index = (row_num - 1) / ROWS_PER_PAGE;
+        let row_index = (row_num - 1) % ROWS_PER_PAGE;
         if self.pages[page_index].is_none() {
             self.pages[page_index].replace(Page::new());
         }

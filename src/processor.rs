@@ -60,7 +60,7 @@ fn execute_select(
 ) -> Result<ProcessorMessage, ProcessorError> {
     match statement_args.next() {
         Some(s) => match s.parse::<usize>() {
-            Ok(n) => match table.get_row(n - 1) {
+            Ok(n) => match table.get_row(n) {
                 Ok(row) => Ok(Fetched(format!("{row:?}"))),
                 Err(e) => Err(TableErr(e)),
             },
