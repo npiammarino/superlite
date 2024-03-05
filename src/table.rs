@@ -72,10 +72,16 @@ impl Row {
 
 impl RowBytes {
     fn deserialize(self) -> Row {
+        let username = str::from_utf8(&self.username)
+            .expect("expect username")
+            .trim_matches('\0');
+        let email = str::from_utf8(&self.email)
+            .expect("expect email")
+            .trim_matches('\0');
         Row {
             id: self.id,
-            username: String::from(str::from_utf8(&self.username).expect("mem")),
-            email: String::from(str::from_utf8(&self.email).expect("mem")),
+            username: String::from(username),
+            email: String::from(email),
         }
     }
 }
@@ -115,6 +121,13 @@ pub struct Table {
 }
 
 impl Table {
+    pub fn new() -> Table {
+        Table {
+            num_rows: 0,
+            pages: [None; TABLE_MAX_PAGES],
+        }
+    }
+
     fn row_slot(&mut self, row_num: usize) -> (usize, usize) {
         let page_index = row_num / ROWS_PER_PAGE;
         let row_index = row_num % ROWS_PER_PAGE;
@@ -137,12 +150,13 @@ impl Table {
         }
 
         let (page_index, row_index) = self.row_slot(self.num_rows + 1);
+        let new_row = row.serialize();
         let mut page = self.pages[page_index].expect("Created in slot function");
-        page.rows[row_index].replace(row.serialize());
+        page.rows[row_index].replace(new_row);
 
-        // let page_index = self.num_rows / PAGE_SIZE;
-        // self.pages[page_index].rows.push(row);
-        // self.num_rows += 1;
+        self.pages[page_index].replace(page);
+        self.num_rows += 1;
+
         Ok(())
     }
 
@@ -152,7 +166,9 @@ impl Table {
         }
 
         let (page_index, row_index) = self.row_slot(row_number);
-        let row_bytes = self.pages[page_index].expect("temp").rows[row_index].expect("temp");
+        let row_bytes =
+            self.pages[page_index].expect("expect page").rows[row_index].expect("expect row");
+
         Ok(row_bytes.deserialize())
     }
 }

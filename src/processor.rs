@@ -75,7 +75,7 @@ fn execute_insert(
     table: &mut Table,
 ) -> Result<ProcessorMessage, ProcessorError> {
     // probably do zip with defn to generalize
-    let id: usize = match statement_args.next() {
+    let id: u32 = match statement_args.next() {
         Some(s) => match s.parse() {
             Ok(n) => n,
             _ => return Err(BadKey),
@@ -99,6 +99,8 @@ fn execute_insert(
         }
     };
 
-    table.push_row(Row::build(id, username, email));
-    Ok(Executed)
+    match table.push_row(Row::build(id, username, email)) {
+        Ok(_) => Ok(Executed),
+        Err(e) => Err(TableErr(e)),
+    }
 }
