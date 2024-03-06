@@ -4,11 +4,12 @@ use std::{fs::OpenOptions, mem, str};
 pub enum TableError {
     TableIndexError,
     TableFull,
+    ByteOverflow,
 }
 use crate::TableError::*;
 
-const USERNAME_MAX: usize = 32;
-const EMAIL_MAX: usize = 255;
+pub const USERNAME_MAX: usize = 32;
+pub const EMAIL_MAX: usize = 255;
 
 type ColumnId = u32;
 type ColumnUsername = [u8; USERNAME_MAX];
@@ -35,9 +36,9 @@ pub struct RowBytes {
 }
 #[derive(Debug, Clone)]
 pub struct Row {
-    id: u32,
-    username: String,
-    email: String,
+    pub id: u32,
+    pub username: String,
+    pub email: String,
 }
 
 impl Row {
@@ -49,24 +50,30 @@ impl Row {
         }
     }
 
-    fn serialize(self) -> RowBytes {
+    fn serialize(self) -> Result<RowBytes, TableError> {
         let mut username = [b'\0'; USERNAME_MAX];
         let chars = self.username.as_bytes();
+        if chars.len() > USERNAME_MAX {
+            return Err(TableError::ByteOverflow);
+        }
         for i in 0..chars.len() {
             username[i] = chars[i];
         }
 
         let mut email = [b'\0'; EMAIL_MAX];
-        let chars = self.username.as_bytes();
+        let chars = self.email.as_bytes();
+        if chars.len() > EMAIL_MAX {
+            return Err(TableError::ByteOverflow);
+        }
         for i in 0..chars.len() {
             email[i] = chars[i];
         }
 
-        RowBytes {
+        Ok(RowBytes {
             id: self.id,
             username,
             email,
-        }
+        })
     }
 }
 
@@ -150,14 +157,18 @@ impl Table {
         }
 
         let (page_index, row_index) = self.row_slot(self.num_rows + 1);
-        let new_row = row.serialize();
-        let mut page = self.pages[page_index].expect("Created in slot function");
-        page.rows[row_index].replace(new_row);
+        match row.serialize() {
+            Ok(new_row) => {
+                let mut page = self.pages[page_index].expect("Created in slot function");
+                page.rows[row_index].replace(new_row);
 
-        self.pages[page_index].replace(page);
-        self.num_rows += 1;
+                self.pages[page_index].replace(page);
+                self.num_rows += 1;
 
-        Ok(())
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
     }
 
     pub fn get_row(&mut self, row_number: usize) -> Result<Row, TableError> {
