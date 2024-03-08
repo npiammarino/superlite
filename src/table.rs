@@ -1,4 +1,8 @@
-use std::{fs::OpenOptions, mem, str};
+use std::{
+    fs::{File, OpenOptions},
+    io::{self, Read, Seek, SeekFrom},
+    mem, str,
+};
 
 #[derive(Debug)]
 pub enum TableError {
@@ -96,60 +100,81 @@ impl RowBytes {
 #[derive(Debug, Clone, Copy)]
 pub struct Page {
     rows: [Option<RowBytes>; ROWS_PER_PAGE],
+    bytes: Option<[u8; PAGE_SIZE]>,
 }
 
 impl Page {
     fn new() -> Page {
         Page {
+            rows: [None; ROWS_PER_PAGE], // move this to heap?
+            bytes: None,
+        }
+    }
+
+    fn from_bytes(bytes: [u8; PAGE_SIZE]) -> Page {
+        Page {
             rows: [None; ROWS_PER_PAGE],
+            bytes: Some(bytes),
         }
     }
 }
 
-// struct Pager {
-//     file: OpenOptions,
-//     pages: [Option<Page>; TABLE_MAX_PAGES],
-// }
+#[derive(Debug)]
+struct Pager {
+    file: File,
+    pages: [Option<Page>; TABLE_MAX_PAGES],
+}
 
-// impl Pager {
-//     fn open(filename: String) -> Result<Pager, ()> {
-//         let f = OpenOptions::new().read(true).write(true).open(filename)?;
-//         let pages = [None; TABLE_MAX_PAGES];
+impl Pager {
+    fn new(filename: String) -> io::Result<Pager> {
+        let f = OpenOptions::new().read(true).write(true).open(filename)?;
+        let pages = [None; TABLE_MAX_PAGES]; // note: should move to heap
 
-//         Pager { file: f, pages }
-//     }
-// }
+        Ok(Pager { file: f, pages })
+    }
+
+    fn get_page(&mut self, page_index: usize) -> io::Result<Page> {
+        match self.pages[page_index] {
+            Some(page) => Ok(page),
+            None => {
+                let mut buff = [0u8; PAGE_SIZE];
+                self.file
+                    .seek(SeekFrom::Start((page_index * PAGE_SIZE) as u64))?;
+                self.file.read_exact(&mut buff)?;
+
+                let new_page = Page::from_bytes(buff);
+                self.pages[page_index] = Some(new_page);
+                Ok(new_page)
+            }
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Table {
     num_rows: usize,
-    pages: [Option<Page>; TABLE_MAX_PAGES],
-    // pager: Pager,
+    // pages: [Option<Page>; TABLE_MAX_PAGES],
+    pager: Pager,
 }
 
 impl Table {
-    pub fn new() -> Table {
+    pub fn new(filename: String) -> Table {
         Table {
             num_rows: 0,
-            pages: [None; TABLE_MAX_PAGES],
+            // pages: [None; TABLE_MAX_PAGES],
+            pager: Pager::new(filename).expect("hopefully this file exists..."),
         }
     }
 
     fn row_slot(&mut self, row_num: usize) -> (usize, usize) {
         let page_index = (row_num - 1) / ROWS_PER_PAGE;
         let row_index = (row_num - 1) % ROWS_PER_PAGE;
-        if self.pages[page_index].is_none() {
-            self.pages[page_index].replace(Page::new());
+        if self.pager.pages[page_index].is_none() {
+            self.pager.pages[page_index].replace(Page::new());
         }
 
         (page_index, row_index)
     }
-    // pub fn open() -> Table {
-    //     let filename = String::new();
-    //     let pager = Pager::open(filename);
-
-    //     Table { num_rows: 0, pager }
-    // }
 
     pub fn push_row(&mut self, row: Row) -> Result<(), TableError> {
         if self.num_rows == TABLE_MAX_ROWS {
@@ -159,10 +184,10 @@ impl Table {
         let (page_index, row_index) = self.row_slot(self.num_rows + 1);
         match row.serialize() {
             Ok(new_row) => {
-                let mut page = self.pages[page_index].expect("Created in slot function");
+                let mut page = self.pager.pages[page_index].expect("Created in slot function");
                 page.rows[row_index].replace(new_row);
 
-                self.pages[page_index].replace(page);
+                self.pager.pages[page_index].replace(page);
                 self.num_rows += 1;
 
                 Ok(())
@@ -178,7 +203,7 @@ impl Table {
 
         let (page_index, row_index) = self.row_slot(row_number);
         let row_bytes =
-            self.pages[page_index].expect("expect page").rows[row_index].expect("expect row");
+            self.pager.pages[page_index].expect("expect page").rows[row_index].expect("expect row");
 
         Ok(row_bytes.deserialize())
     }
