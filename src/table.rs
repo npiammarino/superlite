@@ -1,6 +1,6 @@
 use std::{
     fs::{File, OpenOptions},
-    io::{self, Read, Seek, SeekFrom},
+    io::{self, Error, Read, Seek, SeekFrom, Write},
     mem, str,
 };
 
@@ -31,6 +31,8 @@ const PAGE_SIZE: usize = 4096;
 const TABLE_MAX_PAGES: usize = 100;
 const ROWS_PER_PAGE: usize = PAGE_SIZE / ROW_SIZE;
 const TABLE_MAX_ROWS: usize = ROWS_PER_PAGE * TABLE_MAX_PAGES;
+
+type PageBytes = [u8; PAGE_SIZE];
 
 #[derive(Debug, Clone, Copy)]
 pub struct RowBytes {
@@ -100,7 +102,7 @@ impl RowBytes {
 #[derive(Debug, Clone, Copy)]
 pub struct Page {
     rows: [Option<RowBytes>; ROWS_PER_PAGE],
-    bytes: Option<[u8; PAGE_SIZE]>,
+    bytes: Option<PageBytes>,
 }
 
 impl Page {
@@ -111,11 +113,36 @@ impl Page {
         }
     }
 
-    fn from_bytes(bytes: [u8; PAGE_SIZE]) -> Page {
+    fn from_bytes(bytes: PageBytes) -> Page {
         Page {
             rows: [None; ROWS_PER_PAGE],
             bytes: Some(bytes),
         }
+    }
+
+    fn serialize(&self) -> PageBytes {
+        let mut bytes = [0u8; PAGE_SIZE];
+        for (i, row) in self.rows.iter().enumerate() {
+            let mut cursor = i * ROW_SIZE;
+            if let Some(row_bytes) = row {
+                for byte in row_bytes.id.to_be_bytes() {
+                    bytes[cursor] = byte;
+                    cursor += 1;
+                }
+                cursor = i * ROW_SIZE + USERNAME_OFFSET;
+                for byte in row_bytes.username {
+                    bytes[cursor] = byte;
+                    cursor += 1;
+                }
+                cursor = i * ROW_SIZE + EMAIL_OFFSET;
+                for byte in row_bytes.email {
+                    bytes[cursor] = byte;
+                    cursor += 1;
+                }
+            }
+        }
+
+        bytes
     }
 }
 
@@ -126,7 +153,7 @@ struct Pager {
 }
 
 impl Pager {
-    fn new(filename: String) -> io::Result<Pager> {
+    fn new(filename: &String) -> io::Result<Pager> {
         let f = OpenOptions::new().read(true).write(true).open(filename)?;
         let pages = [None; TABLE_MAX_PAGES]; // note: should move to heap
 
@@ -148,22 +175,52 @@ impl Pager {
             }
         }
     }
+
+    fn flush(&mut self, page_num: usize) -> io::Result<()> {
+        match self.pages[page_num] {
+            None => {}
+            Some(mut page) => {
+                self.file
+                    .seek(SeekFrom::Start((page_num * PAGE_SIZE) as u64))?;
+                match page.bytes {
+                    Some(bytes) => {
+                        self.file.write(&bytes)?;
+                    }
+                    None => {
+                        let bytes = page.serialize();
+                        page.bytes = Some(bytes);
+                        self.file.write(&bytes)?;
+                    }
+                }
+            }
+        };
+
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
 pub struct Table {
     num_rows: usize,
-    // pages: [Option<Page>; TABLE_MAX_PAGES],
+    filename: String,
     pager: Pager,
 }
 
 impl Table {
-    pub fn new(filename: String) -> Table {
+    pub fn open(filename: String) -> Table {
         Table {
             num_rows: 0,
-            // pages: [None; TABLE_MAX_PAGES],
-            pager: Pager::new(filename).expect("hopefully this file exists..."),
+            pager: Pager::new(&filename).expect("hopefully this file exists..."),
+            filename,
         }
+    }
+
+    pub fn close(mut self) -> io::Result<()> {
+        for i in 0..self.pager.pages.len() {
+            self.pager.flush(i)?;
+        }
+        drop(self);
+        Ok(())
     }
 
     fn row_slot(&mut self, row_num: usize) -> (usize, usize) {
