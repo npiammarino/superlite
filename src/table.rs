@@ -1,4 +1,5 @@
 use std::{
+    convert::TryInto,
     fs::{File, OpenOptions},
     io::{self, Error, Read, Seek, SeekFrom, Write},
     mem, str,
@@ -15,7 +16,7 @@ use crate::TableError::*;
 pub const USERNAME_MAX: usize = 32;
 pub const EMAIL_MAX: usize = 255;
 
-type ColumnId = u32;
+type ColumnId = [u8; 4];
 type ColumnUsername = [u8; USERNAME_MAX];
 type ColumnEmail = [u8; EMAIL_MAX];
 
@@ -76,7 +77,7 @@ impl Row {
         }
 
         Ok(RowBytes {
-            id: self.id,
+            id: self.id.to_ne_bytes(),
             username,
             email,
         })
@@ -84,6 +85,21 @@ impl Row {
 }
 
 impl RowBytes {
+    fn new(bytes: [u8; ROW_SIZE]) -> RowBytes {
+        let id: ColumnId = bytes[0..USERNAME_OFFSET].try_into().expect("id from bytes");
+        let username: ColumnUsername = bytes[USERNAME_OFFSET..EMAIL_OFFSET]
+            .try_into()
+            .expect("username from bytes");
+        let email: ColumnEmail = bytes[EMAIL_OFFSET..ROW_SIZE]
+            .try_into()
+            .expect("email from bytes");
+        RowBytes {
+            id,
+            username,
+            email,
+        }
+    }
+
     fn deserialize(self) -> Row {
         let username = str::from_utf8(&self.username)
             .expect("expect username")
@@ -92,7 +108,7 @@ impl RowBytes {
             .expect("expect email")
             .trim_matches('\0');
         Row {
-            id: self.id,
+            id: u32::from_ne_bytes(self.id),
             username: String::from(username),
             email: String::from(email),
         }
@@ -125,7 +141,7 @@ impl Page {
         for (i, row) in self.rows.iter().enumerate() {
             let mut cursor = i * ROW_SIZE;
             if let Some(row_bytes) = row {
-                for byte in row_bytes.id.to_be_bytes() {
+                for byte in row_bytes.id {
                     bytes[cursor] = byte;
                     cursor += 1;
                 }
@@ -176,6 +192,21 @@ impl Pager {
         }
     }
 
+    fn get_row(&mut self, page_index: usize, row_index: usize) -> io::Result<Row> {
+        let page = self.get_page(page_index)?;
+        let row_bytes = match page.rows[row_index] {
+            Some(row) => row,
+            None => {
+                let mut buff = [0u8; ROW_SIZE];
+                self.file
+                    .seek(SeekFrom::Start((row_index * ROW_SIZE) as u64))?;
+                self.file.read_exact(&mut buff)?;
+                RowBytes::new(buff)
+            }
+        };
+        Ok(row_bytes.deserialize())
+    }
+
     fn flush(&mut self, page_num: usize) -> io::Result<()> {
         match self.pages[page_num] {
             None => {}
@@ -209,17 +240,16 @@ pub struct Table {
 impl Table {
     pub fn open(filename: String) -> Table {
         Table {
-            num_rows: 0,
+            num_rows: 3,
             pager: Pager::new(&filename).expect("hopefully this file exists..."),
             filename,
         }
     }
 
-    pub fn close(mut self) -> io::Result<()> {
+    pub fn close(&mut self) -> io::Result<()> {
         for i in 0..self.pager.pages.len() {
             self.pager.flush(i)?;
         }
-        drop(self);
         Ok(())
     }
 
@@ -259,9 +289,10 @@ impl Table {
         }
 
         let (page_index, row_index) = self.row_slot(row_number);
-        let row_bytes =
-            self.pager.pages[page_index].expect("expect page").rows[row_index].expect("expect row");
 
-        Ok(row_bytes.deserialize())
+        Ok(self
+            .pager
+            .get_row(page_index, row_index)
+            .expect("expect row"))
     }
 }

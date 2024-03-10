@@ -5,8 +5,7 @@ extern crate table;
 use table::Table;
 
 fn main() {
-    let mut table = Table::new();
     println!("WELCOME TO SHITTY SQL REPL");
-
+    let mut table = Table::open(String::from("test.db"));
     repl::run(&mut table);
 }
