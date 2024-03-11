@@ -1,7 +1,7 @@
 use std::{
     convert::TryInto,
     fs::{File, OpenOptions},
-    io::{self, Error, Read, Seek, SeekFrom, Write},
+    io::{self, ErrorKind, Read, Seek, SeekFrom, Write},
     mem, str,
 };
 
@@ -20,6 +20,7 @@ type ColumnId = [u8; 4];
 type ColumnUsername = [u8; USERNAME_MAX];
 type ColumnEmail = [u8; EMAIL_MAX];
 
+const HEADER_SIZE: usize = 4;
 const ID_SIZE: usize = mem::size_of::<ColumnId>();
 const USERNAME_SIZE: usize = mem::size_of::<ColumnUsername>();
 const EMAIL_SIZE: usize = mem::size_of::<ColumnEmail>();
@@ -191,10 +192,33 @@ struct Pager {
 
 impl Pager {
     fn new(filename: &String) -> io::Result<Pager> {
-        let f = OpenOptions::new().read(true).write(true).open(filename)?;
+        let f = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(filename)?;
+
         let pages = [None; TABLE_MAX_PAGES]; // note: should move to heap
 
         Ok(Pager { file: f, pages })
+    }
+
+    fn get_num_rows(&mut self) -> io::Result<u32> {
+        let mut buff = [0u8; HEADER_SIZE];
+        match self.file.read_exact(&mut buff) {
+            Ok(_) => Ok(u32::from_ne_bytes(buff)),
+            Err(e) => match e.kind() {
+                ErrorKind::UnexpectedEof => Ok(0),
+                _ => Err(e),
+            },
+        }
+    }
+
+    fn write_num_rows(&mut self, num_rows: u32) -> io::Result<()> {
+        self.file.seek(SeekFrom::Start(0))?;
+        let buff = num_rows.to_ne_bytes();
+        self.file.write(&buff)?;
+        Ok(())
     }
 
     fn get_page(&mut self, page_index: usize) -> io::Result<Page> {
@@ -202,8 +226,8 @@ impl Pager {
             Some(page) => Ok(page),
             None => {
                 let mut buff = [0u8; PAGE_SIZE];
-                self.file
-                    .seek(SeekFrom::Start((page_index * PAGE_SIZE) as u64))?;
+                let start_byte = (HEADER_SIZE + (page_index * PAGE_SIZE)) as u64;
+                self.file.seek(SeekFrom::Start(start_byte))?;
                 self.file.read_exact(&mut buff)?;
 
                 let new_page = Page::from_bytes(buff);
@@ -219,8 +243,9 @@ impl Pager {
             Some(row) => row,
             None => {
                 let mut buff = [0u8; ROW_SIZE];
-                self.file
-                    .seek(SeekFrom::Start((row_index * ROW_SIZE) as u64))?;
+                let start_byte =
+                    (HEADER_SIZE + (page_index * PAGE_SIZE) + (row_index * ROW_SIZE)) as u64;
+                self.file.seek(SeekFrom::Start(start_byte))?;
                 self.file.read_exact(&mut buff)?;
                 RowBytes::new(buff)
             }
@@ -231,7 +256,7 @@ impl Pager {
     }
 
     fn flush(&mut self, page_num: usize) -> io::Result<()> {
-        let page_start = (page_num * PAGE_SIZE) as u64;
+        let page_start = (HEADER_SIZE + (page_num * PAGE_SIZE)) as u64;
         match self.pages[page_num] {
             None => {}
             Some(page) => {
@@ -251,21 +276,24 @@ impl Pager {
 
 #[derive(Debug)]
 pub struct Table {
-    num_rows: usize,
+    num_rows: u32,
     filename: String,
     pager: Pager,
 }
 
 impl Table {
     pub fn open(filename: String) -> Table {
-        Table {
-            num_rows: 3,
+        let mut new_table = Table {
+            num_rows: 0,
             pager: Pager::new(&filename).expect("hopefully this file exists..."),
             filename,
-        }
+        };
+        new_table.num_rows = new_table.pager.get_num_rows().expect("num_rows");
+        new_table
     }
 
     pub fn close(&mut self) -> io::Result<()> {
+        self.pager.write_num_rows(self.num_rows)?;
         for i in 0..self.pager.pages.len() {
             self.pager.flush(i)?;
         }
@@ -283,11 +311,11 @@ impl Table {
     }
 
     pub fn push_row(&mut self, row: Row) -> Result<(), TableError> {
-        if self.num_rows == TABLE_MAX_ROWS {
+        if self.num_rows as usize == TABLE_MAX_ROWS {
             return Err(TableFull);
         }
 
-        let (page_index, row_index) = self.row_slot(self.num_rows + 1);
+        let (page_index, row_index) = self.row_slot(self.num_rows as usize + 1);
         match row.serialize() {
             Ok(new_row) => {
                 let mut page = self.pager.pages[page_index].expect("Created in slot function");
@@ -303,12 +331,11 @@ impl Table {
     }
 
     pub fn get_row(&mut self, row_number: usize) -> Result<Row, TableError> {
-        if row_number > self.num_rows {
+        if row_number > self.num_rows as usize {
             return Err(TableIndexError);
         }
 
         let (page_index, row_index) = self.row_slot(row_number);
-        let row = self.pager.get_row(page_index, row_index);
 
         Ok(self
             .pager
