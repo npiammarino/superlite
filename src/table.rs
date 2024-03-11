@@ -100,7 +100,28 @@ impl RowBytes {
         }
     }
 
-    fn deserialize(self) -> Row {
+    fn serialize(&self) -> [u8; ROW_SIZE] {
+        let mut bytes = [0u8; ROW_SIZE];
+        let mut cursor = 0;
+        for byte in self.id {
+            bytes[cursor] = byte;
+            cursor += 1;
+        }
+        cursor = USERNAME_OFFSET;
+        for byte in self.username {
+            bytes[cursor] = byte;
+            cursor += 1;
+        }
+        cursor = EMAIL_OFFSET;
+        for byte in self.email {
+            bytes[cursor] = byte;
+            cursor += 1;
+        }
+
+        bytes
+    }
+
+    fn deserialize(&self) -> Row {
         let username = str::from_utf8(&self.username)
             .expect("expect username")
             .trim_matches('\0');
@@ -193,7 +214,7 @@ impl Pager {
     }
 
     fn get_row(&mut self, page_index: usize, row_index: usize) -> io::Result<Row> {
-        let page = self.get_page(page_index)?;
+        let mut page = self.get_page(page_index)?;
         let row_bytes = match page.rows[row_index] {
             Some(row) => row,
             None => {
@@ -204,23 +225,21 @@ impl Pager {
                 RowBytes::new(buff)
             }
         };
+        page.rows[row_index] = Some(row_bytes);
+        self.pages[page_index] = Some(page);
         Ok(row_bytes.deserialize())
     }
 
     fn flush(&mut self, page_num: usize) -> io::Result<()> {
+        let page_start = (page_num * PAGE_SIZE) as u64;
         match self.pages[page_num] {
             None => {}
-            Some(mut page) => {
-                self.file
-                    .seek(SeekFrom::Start((page_num * PAGE_SIZE) as u64))?;
-                match page.bytes {
-                    Some(bytes) => {
-                        self.file.write(&bytes)?;
-                    }
-                    None => {
-                        let bytes = page.serialize();
-                        page.bytes = Some(bytes);
-                        self.file.write(&bytes)?;
+            Some(page) => {
+                for (i, row_entry) in page.rows.iter().enumerate() {
+                    if let Some(row_bytes) = row_entry {
+                        let row_start = page_start + (i * ROW_SIZE) as u64;
+                        self.file.seek(SeekFrom::Start(row_start))?;
+                        self.file.write(&row_bytes.serialize())?;
                     }
                 }
             }
@@ -289,6 +308,7 @@ impl Table {
         }
 
         let (page_index, row_index) = self.row_slot(row_number);
+        let row = self.pager.get_row(page_index, row_index);
 
         Ok(self
             .pager
