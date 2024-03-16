@@ -27,6 +27,7 @@ dirs:
 
 clean:
 	rm main || true
+	rm test.db || true #database created for dummy main run
 	rm -r build || true
 	find -name "*~" -type f -delete
 

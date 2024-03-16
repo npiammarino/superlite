@@ -1,4 +1,5 @@
 use std::{
+    boxed::Box,
     convert::TryInto,
     fs::{File, OpenOptions},
     io::{self, ErrorKind, Read, Seek, SeekFrom, Write},
@@ -158,36 +159,36 @@ impl Page {
         }
     }
 
-    fn serialize(&self) -> PageBytes {
-        let mut bytes = [0u8; PAGE_SIZE];
-        for (i, row) in self.rows.iter().enumerate() {
-            let mut cursor = i * ROW_SIZE;
-            if let Some(row_bytes) = row {
-                for byte in row_bytes.id {
-                    bytes[cursor] = byte;
-                    cursor += 1;
-                }
-                cursor = i * ROW_SIZE + USERNAME_OFFSET;
-                for byte in row_bytes.username {
-                    bytes[cursor] = byte;
-                    cursor += 1;
-                }
-                cursor = i * ROW_SIZE + EMAIL_OFFSET;
-                for byte in row_bytes.email {
-                    bytes[cursor] = byte;
-                    cursor += 1;
-                }
-            }
-        }
+    // fn serialize(&self) -> PageBytes {
+    //     let mut bytes = [0u8; PAGE_SIZE];
+    //     for (i, row) in self.rows.iter().enumerate() {
+    //         let mut cursor = i * ROW_SIZE;
+    //         if let Some(row_bytes) = row {
+    //             for byte in row_bytes.id {
+    //                 bytes[cursor] = byte;
+    //                 cursor += 1;
+    //             }
+    //             cursor = i * ROW_SIZE + USERNAME_OFFSET;
+    //             for byte in row_bytes.username {
+    //                 bytes[cursor] = byte;
+    //                 cursor += 1;
+    //             }
+    //             cursor = i * ROW_SIZE + EMAIL_OFFSET;
+    //             for byte in row_bytes.email {
+    //                 bytes[cursor] = byte;
+    //                 cursor += 1;
+    //             }
+    //         }
+    //     }
 
-        bytes
-    }
+    //     bytes
+    // }
 }
 
 #[derive(Debug)]
 struct Pager {
     file: File,
-    pages: [Option<Page>; TABLE_MAX_PAGES],
+    pages: Box<[Option<Page>; TABLE_MAX_PAGES]>,
 }
 
 impl Pager {
@@ -198,7 +199,7 @@ impl Pager {
             .create(true)
             .open(filename)?;
 
-        let pages = [None; TABLE_MAX_PAGES]; // note: should move to heap
+        let pages = Box::new([None; TABLE_MAX_PAGES]);
 
         Ok(Pager { file: f, pages })
     }

@@ -1,7 +1,6 @@
 extern crate table;
 
-use std::boxed::Box;
-use table::{TableError, EMAIL_MAX, USERNAME_MAX, *};
+use table::{EMAIL_MAX, USERNAME_MAX, *};
 
 #[test]
 fn test_table_add_length() {
