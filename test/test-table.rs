@@ -1,12 +1,14 @@
 extern crate table;
 
+use std::boxed::Box;
 use table::{TableError, EMAIL_MAX, USERNAME_MAX, *};
 
 #[test]
 fn test_table_add_length() {
-    let mut table = Table::new();
+    let mut table = Table::open(String::from("./testdbs/length-test.db"));
 
     let id: u32 = 123;
+
     let username = std::str::from_utf8(&[b'a'; USERNAME_MAX]).unwrap();
     let email = std::str::from_utf8(&[b'a'; EMAIL_MAX]).unwrap();
 
@@ -30,7 +32,7 @@ fn test_table_add_length() {
 
 #[test]
 fn test_table_get_row() {
-    let mut table = Table::new();
+    let mut table = Table::open(String::from("./testdbs/row-test.db"));
 
     let id: u32 = 123;
     let username = std::str::from_utf8(&[b'a'; USERNAME_MAX]).unwrap();

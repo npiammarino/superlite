@@ -17,8 +17,10 @@ libtable.rlib: src/table.rs  dirs
 
 test-table: test/test-table.rs libtable.rlib
 	@rustc -L build --crate-type lib test/test-table.rs --test
+	@mkdir testdbs
 	./test-table
 	rm test-table
+	@rm -r testdbs
 
 dirs:
 	@mkdir -p build
