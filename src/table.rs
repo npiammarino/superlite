@@ -282,6 +282,39 @@ pub struct Table {
     pager: Pager,
 }
 
+struct Cursor {
+    table: &Table,
+    row_number: u32,
+    end_of_table: bool,
+}
+
+impl Cursor {
+    fn new(table: &Table, row_number: u32) -> Cursor {
+        Cursor {
+            table,
+            row_number: row_number,
+            end_of_table: false,
+        }
+    }
+
+    fn start_of_table(&mut self) {
+        self.row_number = 0;
+        self.end_of_table = false;
+    }
+
+    fn end_of_table(&mut self) {
+        self.row_number = self.table.num_rows;
+        self.end_of_table = true;
+    }
+
+    fn advance(&mut self) {
+        self.row_number += 1;
+        if (self.row_number >= self.table.num_rows) {
+            self.end_of_table = true;
+        }
+    }
+}
+
 impl Table {
     pub fn open(filename: String) -> Table {
         let mut new_table = Table {

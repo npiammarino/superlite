@@ -2,10 +2,11 @@ extern crate processor;
 extern crate repl;
 extern crate table;
 
+use repl::Repl;
 use table::Table;
 
 fn main() {
     println!("WELCOME TO SHITTY SQL REPL");
-    let mut table = Table::open(String::from("test.db"));
-    repl::run(&mut table);
+    let repl = Repl::new();
+    repl.run();
 }
