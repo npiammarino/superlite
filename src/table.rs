@@ -282,13 +282,13 @@ pub struct Table {
     pager: Pager,
 }
 
-struct Cursor {
-    table: &Table,
+struct Cursor<'a> {
+    table: &'a Table,
     row_number: u32,
     end_of_table: bool,
 }
 
-impl Cursor {
+impl<'a> Cursor<'a> {
     fn new(table: &Table, row_number: u32) -> Cursor {
         Cursor {
             table,
@@ -309,7 +309,7 @@ impl Cursor {
 
     fn advance(&mut self) {
         self.row_number += 1;
-        if (self.row_number >= self.table.num_rows) {
+        if self.row_number >= self.table.num_rows {
             self.end_of_table = true;
         }
     }
