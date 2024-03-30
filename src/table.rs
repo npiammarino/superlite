@@ -28,9 +28,9 @@ const EMAIL_SIZE: usize = mem::size_of::<ColumnEmail>();
 const ID_OFFSET: usize = 0;
 const USERNAME_OFFSET: usize = ID_OFFSET + ID_SIZE;
 const EMAIL_OFFSET: usize = USERNAME_OFFSET + USERNAME_SIZE;
-const ROW_SIZE: usize = ID_SIZE + USERNAME_SIZE + EMAIL_SIZE;
+pub const ROW_SIZE: usize = ID_SIZE + USERNAME_SIZE + EMAIL_SIZE;
 
-const PAGE_SIZE: usize = 4096;
+pub const PAGE_SIZE: usize = 4096;
 const TABLE_MAX_PAGES: usize = 100;
 const ROWS_PER_PAGE: usize = PAGE_SIZE / ROW_SIZE;
 const TABLE_MAX_ROWS: usize = ROWS_PER_PAGE * TABLE_MAX_PAGES;
@@ -147,7 +147,7 @@ pub struct Page {
 impl Page {
     fn new() -> Page {
         Page {
-            rows: [None; ROWS_PER_PAGE], // move this to heap?
+            rows: [None; ROWS_PER_PAGE],
             bytes: None,
         }
     }
@@ -189,6 +189,7 @@ impl Page {
 struct Pager {
     file: File,
     pages: Box<[Option<Page>; TABLE_MAX_PAGES]>,
+    num_pages: usize,
 }
 
 impl Pager {
@@ -201,7 +202,11 @@ impl Pager {
 
         let pages = Box::new([None; TABLE_MAX_PAGES]);
 
-        Ok(Pager { file: f, pages })
+        Ok(Pager {
+            file: f,
+            pages,
+            num_pages: TABLE_MAX_PAGES,
+        })
     }
 
     fn get_num_rows(&mut self) -> io::Result<u32> {
@@ -280,25 +285,29 @@ pub struct Table {
     num_rows: u32,
     filename: String,
     pager: Pager,
+    root_page_num: usize,
 }
 
 struct Cursor<'a> {
     table: &'a Table,
-    row_number: u32,
+    page_num: usize,
+    cell_num: usize,
     end_of_table: bool,
 }
 
 impl<'a> Cursor<'a> {
-    fn new(table: &Table, row_number: u32) -> Cursor {
+    fn new(table: &Table, page_num: usize, cell_num: usize) -> Cursor {
         Cursor {
             table,
-            row_number: row_number,
+            page_num,
+            cell_num,
             end_of_table: false,
         }
     }
 
     fn start_of_table(&mut self) {
-        self.row_number = 0;
+        self.page_number = self.table.root_page_num;
+
         self.end_of_table = false;
     }
 
@@ -321,6 +330,7 @@ impl Table {
             num_rows: 0,
             pager: Pager::new(&filename).expect("hopefully this file exists..."),
             filename,
+            root_page_num: 0,
         };
         new_table.num_rows = new_table.pager.get_num_rows().expect("num_rows");
         new_table

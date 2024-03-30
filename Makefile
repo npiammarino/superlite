@@ -15,6 +15,10 @@ libtable.rlib: src/table.rs  dirs
 	rustc --crate-type lib src/table.rs
 	@mv libtable.rlib build
 
+libbtree.rlib: src/btree.rs libtable.rlib dirs
+	rustc -L build --crate-type lib src/btree.rs
+	@mv libbtree.rs build
+
 test-table: test/test-table.rs libtable.rlib
 	@rustc -L build --crate-type lib test/test-table.rs --test
 	@mkdir testdbs
