@@ -99,8 +99,9 @@ fn build_page_header(page_one: bool, page_type: u8, interior: bool) -> Vec<u8> {
     header
 }
 
-fn build_page(page_type: u8) -> Page {}
+fn build_page(page_type: u8) -> Page {vec![]}
 
+// table b-tree leaf cell
 fn build_tl_cell(rowid: i64, payload: Vec<u8>) -> Cell {
     let mut cell: Vec<u8> = vec![];
 
@@ -113,32 +114,36 @@ fn build_tl_cell(rowid: i64, payload: Vec<u8>) -> Cell {
     cell
 }
 
+// tabel b-tree interior cell
 fn build_ti_cell(rowid: i64, left_child: u32) -> Cell {
     let mut cell: Vec<u8> = vec![];
 
-    cell.extend_from_slice(&left_child.to_be_bytes);
+    cell.extend_from_slice(&left_child.to_be_bytes());
     cell.extend_from_slice(&rowid.to_be_bytes());
 
     cell
 }
 
+// build index b-tree leaf cell
 fn build_il_cell(rowid: i64, payload: Vec<u8>) -> Cell {
     let mut cell: Vec<u8> = vec![];
 
-    cell.extend_from_slice(&payload.len().to_be_bytes);
-    cell.extend_from_slice(payload.as_slice);
+    cell.extend_from_slice(&payload.len().to_be_bytes());
+    cell.extend_from_slice(payload.as_slice());
 
     cell
 }
 
+// build index b-tree interior cell
 fn build_ii_cell(payload: Vec<u8>, left_child: u32) -> Cell {
     let mut cell: Vec<u8> = vec![];
 
     cell.extend_from_slice(&left_child.to_be_bytes());
     cell.extend_from_slice(&payload.len().to_be_bytes());
-    cell.extend_from_slice(payload.as_slice);
+    cell.extend_from_slice(payload.as_slice());
 
     // add overflow page number if needed
+    cell
 }
 
 fn build_cell(
@@ -164,6 +169,7 @@ fn build_cell(
         0x0a => {}
         // Index interior
         0x0d => {}
+	_ => {}
     }
 
     cell
@@ -173,4 +179,10 @@ fn main() {
     let header = build_db_header();
     println!("Header length: {}", header.len());
     println!("Header bytes: {:02X?}", header);
+
+    let message = "hello there";
+    let payload = Vec::from(message.as_bytes());
+    let ti_cell = build_cell(2, payload, Some(1), None);
+    println!("Tree interior cell length: {}", ti_cell.len());
+    println!("Tree interior cell bytes: {:02X?}", ti_cell);
 }
